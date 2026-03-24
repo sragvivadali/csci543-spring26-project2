@@ -1,0 +1,6 @@
+# Shrink build context; source tree is copied explicitly
+postgres/.git
+postgres/.github
+**/__pycache__
+**/*.pyc
+.DS_Store

@@ -1,0 +1,26 @@
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    ports:
+      - "5432:5432"
+    environment:
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      # Your edits under ./postgres are visible here; entrypoint runs make on each start
+      - ./postgres:/build/postgres
+      - pgdata:/var/lib/postgresql/data
+    develop:
+      watch:
+        # On change: sync into mounted tree + restart → entrypoint reruns make install
+        # (Compose may not support plain "restart"; sync+restart works with bind mounts.)
+        - path: ./postgres
+          target: /build/postgres
+          action: sync+restart
+          ignore:
+            - .git/**
+
+volumes:
+  pgdata:
