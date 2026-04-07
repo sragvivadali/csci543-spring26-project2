@@ -7,9 +7,9 @@ This document now reflects the **profiler-only** setup in this repository: expre
 ## Architecture (current state)
 
 1. **`JITProfiler::Fingerprint(expr)`** computes a 64-bit structural hash of a bound expression tree.
-2. **`JITProfiler::Record(expr, tuple_count)`** increments `counts[fingerprint] += tuple_count`.
-3. **`ExpressionExecutor::Execute(...)`** calls `Record` for non-empty batches so execution volume is accumulated during normal query execution.
-4. **`JITProfiler::PrintStats()`** prints the internal hash table (`fingerprint -> total evaluated tuples`).
+2. **`JITProfiler::Record(expr, tuple_count)`** increments `counts[fingerprint] += tuple_count` **only** when the expression root is a bound scalar arithmetic operator (`+`, `-`, `*`, `/`, `//`, `%`), matching **`JITProfiler::ProfilesAsArithmeticRoot(expr)`** (same rule a future JIT compiler should use). Other roots (comparisons, casts, generic functions, etc.) are ignored.
+3. **`ExpressionExecutor::Execute(...)`** calls `Record` for non-empty batches; arithmetic subexpressions accrue volume during normal query execution.
+4. **`JITProfiler::PrintStats()`** prints the internal hash table (`fingerprint -> total evaluated tuples`) for those arithmetic roots only.
 
 No LLVM compiler, dispatcher, or native function cache is active in the current codebase.
 
