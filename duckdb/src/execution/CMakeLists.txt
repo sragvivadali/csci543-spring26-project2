@@ -34,18 +34,14 @@ if(DUCKDB_JIT_ENABLED)
   include_directories(${LLVM_INCLUDE_DIRS})
   add_definitions(${LLVM_DEFINITIONS} -DDUCKDB_JIT_ENABLED)
 
-  # Map required LLVM components to library names.
-  # core + orcjit + native covers: IR builder, ORC/LLJIT, and native target support.
-  llvm_map_components_to_libnames(DUCKDB_LLVM_LIBS
-    core
-    orcjit
-    native        # InitializeNativeTarget + InitializeNativeTargetAsmPrinter
-    support
-  )
+  # Homebrew LLVM is built in shared mode — link against the single shared lib.
+  # Using llvm_map_components_to_libnames with individual static .a libs causes
+  # unresolved cross-dependencies; the shared libLLVM includes everything.
+  set(DUCKDB_LLVM_LIBS LLVM)
 
-  # Link LLVM into the main duckdb target (defined later in the top-level CMake).
-  # We store the libs in a cache var so the top-level CMakeLists can use them.
+  # Store in cache vars so the top-level src/CMakeLists.txt can link them.
   set(DUCKDB_JIT_LLVM_LIBS ${DUCKDB_LLVM_LIBS} CACHE INTERNAL "LLVM libs for JIT")
+  set(DUCKDB_JIT_LLVM_LIB_DIRS ${LLVM_LIBRARY_DIRS} CACHE INTERNAL "LLVM lib dirs for JIT")
 endif()
 set(ALL_OBJECT_FILES
     ${ALL_OBJECT_FILES} $<TARGET_OBJECTS:duckdb_execution>

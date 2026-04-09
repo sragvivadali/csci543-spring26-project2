@@ -131,8 +131,8 @@ uint64_t JITProfiler::Fingerprint(const Expression &expr) {
 }
 
 JITProfiler &JITProfiler::GetInstance() {
-	static JITProfiler instance;
-	return instance;
+	static auto *instance = new JITProfiler();
+	return *instance;
 }
 
 void JITProfiler::Record(const Expression &expr, idx_t tuple_count) {
