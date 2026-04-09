@@ -151,8 +151,8 @@ bool JITProfiler::ProfilesAsArithmeticRoot(const Expression &expr) {
 }
 
 JITProfiler &JITProfiler::GetInstance() {
-	static JITProfiler instance;
-	return instance;
+	static auto *instance = new JITProfiler();
+	return *instance;
 }
 
 void JITProfiler::PushQueryScope(idx_t query_id) {
