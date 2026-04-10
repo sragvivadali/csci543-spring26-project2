@@ -15,6 +15,9 @@ add_library_unity(
   expression_executor.cpp
   expression_executor_state.cpp
   jit/jit_profiler.cpp
+  jit/jit_cache.cpp
+  jit/jit_dispatcher.cpp
+  jit/jit_benchmark.cpp
   join_hashtable.cpp
   perfect_aggregate_hashtable.cpp
   physical_operator.cpp

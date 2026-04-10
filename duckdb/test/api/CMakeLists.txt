@@ -35,6 +35,8 @@ set(TEST_API_OBJECTS
     test_insertion_order_preserving_map.cpp
     test_bignum.cpp
     test_jit_profiler.cpp
+    test_jit_cache.cpp
+    test_jit_dispatcher.cpp
     test_threads.cpp
     test_windows_header_compatibility.cpp
     test_windows_unicode_path.cpp
