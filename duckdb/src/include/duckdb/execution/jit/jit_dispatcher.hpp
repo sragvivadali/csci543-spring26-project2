@@ -16,7 +16,7 @@
 // --------------
 // 1. Check if expression has compiled code in cache
 // 2. If not, check if expression is "hot" enough to compile
-// 3. If hot and not cached, trigger compilation (stub for now)
+// 3. If hot and not cached, trigger compilation (TryCompile may be stubbed; see jit_dispatcher.cpp)
 // 4. Otherwise use interpreter
 //
 // Configuration

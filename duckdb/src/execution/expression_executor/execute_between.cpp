@@ -4,6 +4,7 @@
 #include "duckdb/planner/expression/bound_between_expression.hpp"
 #include "duckdb/common/operator/comparison_operators.hpp"
 #include "duckdb/common/vector_operations/ternary_executor.hpp"
+// CSCI 543: profiler hook in Select(BoundBetweenExpression) — see jit_profiler.hpp.
 #include "duckdb/execution/jit/jit_profiler.hpp"
 
 namespace duckdb {
@@ -137,6 +138,8 @@ idx_t ExpressionExecutor::Select(const BoundBetweenExpression &expr, ExpressionS
 #ifdef DUCKDB_SMALLER_BINARY
 	throw InternalException("ExpressionExecutor::Select not available with DUCKDB_SMALLER_BINARY");
 #else
+	// CSCI 543 profiler hook (same pattern as comparison Select). BETWEEN is not an arithmetic
+	// root; Record() typically no-ops until eligibility is broadened.
 	JITProfiler::GetInstance().Record(expr, count);
 	// resolve the children
 	Vector input(Vector::Ref(state->intermediate_chunk.data[0]));

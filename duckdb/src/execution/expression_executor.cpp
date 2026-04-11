@@ -4,6 +4,7 @@
 #include "duckdb/execution/execution_context.hpp"
 #include "duckdb/storage/statistics/base_statistics.hpp"
 #include "duckdb/planner/expression/list.hpp"
+// CSCI 543 — JIT groundwork: hotness profiling for bound expressions (see jit_profiler.hpp).
 #include "duckdb/execution/jit/jit_profiler.hpp"
 #include "duckdb/main/settings.hpp"
 #include "duckdb/function/cast/cast_function_set.hpp"
@@ -244,6 +245,13 @@ void ExpressionExecutor::Execute(const Expression &expr, ExpressionState *state,
 	if (count == 0) {
 		return;
 	}
+	// JIT / research hook (CSCI 543): attribute `count` rows to this expression's structural
+	// fingerprint. Eligibility is defined in JITProfiler::Record (currently arithmetic roots;
+	// see jit_profiler.hpp). This runs for every dense Execute path (projections, boolean
+	// materialization, etc.) before interpreter dispatch.
+	// Optional extension: if JITDispatcher::TryExecuteJIT(expr, *this, inputs, result, count)
+	// returns true, return early after Verify — keeps JIT at this single entry point (not in
+	// per-type execute_*.cpp files).
 	JITProfiler::GetInstance().Record(expr, count);
 
 	if (result.GetType().id() != expr.return_type.id()) {

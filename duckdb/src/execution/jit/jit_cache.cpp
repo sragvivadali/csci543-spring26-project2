@@ -1,3 +1,7 @@
+//===----------------------------------------------------------------------===//
+// JITCache — LRU map fingerprint → JITCompiledFunction. Keys match JITProfiler::Fingerprint.
+// Thread-safe; used by JITDispatcher after successful compilation (when wired).
+//===----------------------------------------------------------------------===//
 #include "duckdb/execution/jit/jit_cache.hpp"
 #include "duckdb/execution/jit/jit_profiler.hpp"
 

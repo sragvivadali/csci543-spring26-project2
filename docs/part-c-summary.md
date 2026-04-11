@@ -162,9 +162,10 @@ Everything works together seamlessly.
 - `tools/jit_benchmark_demo.cpp`
 
 ### Documentation
-- `JIT_RUNTIME_IMPLEMENTATION.md` (detailed technical docs)
-- `PART_C_README.md` (user guide)
-- `PART_C_SUMMARY.md` (this file)
+- [`runtime-implementation.md`](runtime-implementation.md) (detailed technical docs)
+- [`usage-examples.md`](usage-examples.md) (API examples)
+- [`part-c-summary.md`](part-c-summary.md) (this file)
+- Root [`README.md`](../README.md) (project overview + benchmark table)
 
 ---
 
@@ -291,10 +292,10 @@ cout << "Results match: " << result.results_match << endl;
 
 ```bash
 # Detailed technical docs
-cat JIT_RUNTIME_IMPLEMENTATION.md
+cat docs/runtime-implementation.md
 
-# User guide
-cat PART_C_README.md
+# Examples
+cat docs/usage-examples.md
 ```
 
 ### 2. Run the Tests

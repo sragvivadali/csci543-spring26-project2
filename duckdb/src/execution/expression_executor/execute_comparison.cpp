@@ -4,6 +4,7 @@
 #include "duckdb/planner/expression/bound_comparison_expression.hpp"
 #include "duckdb/common/operator/comparison_operators.hpp"
 #include "duckdb/common/vector_operations/binary_executor.hpp"
+// CSCI 543: same profiler hook as expression_executor — counts eligible roots per filter batch.
 #include "duckdb/execution/jit/jit_profiler.hpp"
 
 #include <algorithm>
@@ -360,7 +361,10 @@ idx_t VectorOperations::LessThanEquals(Vector &left, Vector &right, optional_ptr
 idx_t ExpressionExecutor::Select(const BoundComparisonExpression &expr, ExpressionState *state,
                                  const SelectionVector *sel, idx_t count, SelectionVector *true_sel,
                                  SelectionVector *false_sel) {
-	// profiler records the times the expression is seen in the plan
+	// Record before evaluating children so this batch's `count` rows are attributed to the
+	// comparison root. With arithmetic-only Record() policy, comparisons are usually skipped
+	// inside Record (see jit_profiler.hpp). Projection comparisons go through Execute() which
+	// also calls Record on the root.
 	JITProfiler::GetInstance().Record(expr, count);
 	// resolve the children
 	state->intermediate_chunk.Reset();

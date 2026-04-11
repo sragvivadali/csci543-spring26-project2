@@ -52,8 +52,8 @@
 // Instrumentation (where Record is called)
 // ----------------------------------------
 // - `ExpressionExecutor::Execute(const Expression &, ...)` after the `count == 0` guard.
-// - `Select(BoundComparisonExpression)` and `Select(BoundBetweenExpression)` still call
-//   `Record`, but comparisons are filtered out (no counter update).
+// - `Select(BoundComparisonExpression)` / `Select(BoundBetweenExpression)` call `Record` for
+//   filter batches; with arithmetic-only eligibility, those roots usually do not increment counts.
 //
 // Typical usage
 // -------------

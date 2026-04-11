@@ -1,3 +1,8 @@
+//===----------------------------------------------------------------------===//
+// JITProfiler — fingerprinting + tuple-weighted execution counts (CSCI 543).
+// Hash: FNV-1a over bound expression shape (see HashExpressionTree). Record() gates on
+// ProfilesAsArithmeticRoot so filter/projection comparisons can call Record but often no-op.
+//===----------------------------------------------------------------------===//
 #include "duckdb/execution/jit/jit_profiler.hpp"
 
 #include "duckdb/planner/expression/list.hpp"
@@ -127,10 +132,9 @@ static void HashExpressionTree(uint64_t &hash, const Expression &expr) {
 }
 
 static void SortFingerprintCounts(vector<JITProfilerFingerprintCount> &v) {
-	std::sort(v.begin(), v.end(),
-	          [](const JITProfilerFingerprintCount &a, const JITProfilerFingerprintCount &b) {
-		          return a.fingerprint < b.fingerprint;
-	          });
+	std::sort(v.begin(), v.end(), [](const JITProfilerFingerprintCount &a, const JITProfilerFingerprintCount &b) {
+		return a.fingerprint < b.fingerprint;
+	});
 }
 
 } // namespace
@@ -143,6 +147,8 @@ uint64_t JITProfiler::Fingerprint(const Expression &expr) {
 }
 
 bool JITProfiler::ProfilesAsArithmeticRoot(const Expression &expr) {
+	// Narrow predicate: only binary/scalar ops bound as BoundFunctionExpression with these names.
+	// Used by Record() and by tests; JITDispatcher hotness only sees roots that pass Record().
 	if (expr.GetExpressionClass() != ExpressionClass::BOUND_FUNCTION) {
 		return false;
 	}
@@ -166,6 +172,8 @@ void JITProfiler::PopQueryScope() {
 }
 
 void JITProfiler::Record(const Expression &expr, idx_t tuple_count) {
+	// Extend eligibility here (e.g. OR with JITCompiler::CanCompile) if filter comparisons
+	// should contribute to the same hotness counters JITDispatcher::ShouldCompile reads.
 	if (!ProfilesAsArithmeticRoot(expr)) {
 		return;
 	}
@@ -269,8 +277,7 @@ vector<JITProfilerFingerprintCount> JITProfiler::GetTopHotExpressions(idx_t limi
 	for (const auto &entry : counts) {
 		out.push_back({entry.first, entry.second});
 	}
-	std::sort(out.begin(), out.end(), [](const JITProfilerFingerprintCount &a,
-	                                      const JITProfilerFingerprintCount &b) {
+	std::sort(out.begin(), out.end(), [](const JITProfilerFingerprintCount &a, const JITProfilerFingerprintCount &b) {
 		if (a.tuple_count != b.tuple_count) {
 			return a.tuple_count > b.tuple_count;
 		}

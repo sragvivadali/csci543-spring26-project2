@@ -1,3 +1,7 @@
+//===----------------------------------------------------------------------===//
+// JITBenchmark — compare interpreter vs JIT-enabled runs (CSCI 543).
+// Toggles JITDispatcher / clears profiler+cache between phases; CSV export supported.
+//===----------------------------------------------------------------------===//
 #include "duckdb/execution/jit/jit_benchmark.hpp"
 #include "duckdb/execution/jit/jit_dispatcher.hpp"
 #include "duckdb/execution/jit/jit_profiler.hpp"
