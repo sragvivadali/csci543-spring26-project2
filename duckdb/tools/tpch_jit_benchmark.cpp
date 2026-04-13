@@ -18,6 +18,9 @@
 //
 // Example:
 //   ./build/debug/tools/tpch_jit_benchmark 1 5 results/tpch_sf1.csv
+//
+// Optional: DUCKDB_BENCHMARK_THREADS=N caps DuckDB query parallelism (e.g. 2).
+//   DUCKDB_BENCHMARK_THREADS=2 ./build/tools/tpch_jit_benchmark
 //===----------------------------------------------------------------------===//
 
 #include "duckdb.hpp"
@@ -36,6 +39,7 @@
 #include <vector>
 #include <string>
 #include <chrono>
+#include <cstdlib>
 #include <stdexcept>
 
 using namespace duckdb;
@@ -48,6 +52,19 @@ static void PrintBanner(const std::string &title) {
     std::cout << "\n" << std::string(72, '=') << "\n"
               << "  " << title << "\n"
               << std::string(72, '=') << "\n";
+}
+
+static void ApplyBenchmarkThreadCap(Connection &conn) {
+    const char *env = std::getenv("DUCKDB_BENCHMARK_THREADS");
+    if (!env || env[0] == '\0') {
+        return;
+    }
+    auto res = conn.Query(string("PRAGMA threads=") + env);
+    if (res->HasError()) {
+        std::cerr << "WARNING: PRAGMA threads failed: " << res->GetError() << "\n";
+        return;
+    }
+    std::cout << "DuckDB worker threads set to " << env << " (DUCKDB_BENCHMARK_THREADS)\n";
 }
 
 static double MeasureMs(Connection &conn, const std::string &sql) {
@@ -127,6 +144,7 @@ int main(int argc, char *argv[]) {
     db.LoadStaticExtension<TpchExtension>();
 
     Connection conn(db);
+    ApplyBenchmarkThreadCap(conn);
 
     // -----------------------------------------------------------------------
     // 2.  Generate TPC-H data

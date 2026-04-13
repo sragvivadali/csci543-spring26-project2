@@ -5,7 +5,7 @@
 // TryCompile → Lookup again → run cached std::function or count interpreter path.
 //
 // Intended call site: ExpressionExecutor::Execute after JITProfiler::Record (same batch
-// `count` and column pointers into the current chunk). TryCompile is still a stub here;
+// `count` and column pointers into the current chunk).
 // a full integration calls JITCompiler::Compile, wraps JITCompiledFn for JITCache::Insert.
 //===----------------------------------------------------------------------===//
 #include "duckdb/execution/jit/jit_dispatcher.hpp"
@@ -20,6 +20,12 @@
 #include <mutex>
 
 namespace duckdb {
+
+JITDispatcher::JITDispatcher()
+    : compilation_threshold(1000), enable_jit(false), jit_executions(0), interpreter_executions(0),
+      compilation_attempts(0), compilation_successes(0), compilation_failures(0) {
+	JITProfiler::GetInstance().SetHotnessThreshold(compilation_threshold);
+}
 
 JITDispatcher &JITDispatcher::GetInstance() {
 	static JITDispatcher instance;
@@ -60,6 +66,8 @@ bool JITDispatcher::TryExecuteJIT(const Expression &expr, ExpressionExecutor &ex
 
 void JITDispatcher::SetCompilationThreshold(idx_t threshold) {
 	compilation_threshold = threshold;
+	// Keep profiler "hot" labeling in sync so IsExpressionHot / exports match compile policy.
+	JITProfiler::GetInstance().SetHotnessThreshold(threshold);
 }
 
 void JITDispatcher::SetEnableJIT(bool enable) {

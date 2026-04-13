@@ -21,7 +21,7 @@
 //
 // Configuration
 // -------------
-// - compilation_threshold: min tuple count before compiling (default 10000)
+// - compilation_threshold: min tuple count before compiling (default 1000; synced to JITProfiler hotness)
 // - enable_jit: master switch to enable/disable JIT (default false)
 //
 //===----------------------------------------------------------------------===//
@@ -68,12 +68,7 @@ public:
 	void PrintStats() const;
 
 private:
-	JITDispatcher() 
-	    : compilation_threshold(10000), enable_jit(false),
-	      jit_executions(0), interpreter_executions(0),
-	      compilation_attempts(0), compilation_successes(0), 
-	      compilation_failures(0) {
-	}
+	JITDispatcher();
 
 	idx_t compilation_threshold;
 	bool enable_jit;

@@ -14,10 +14,10 @@
 //
 // What gets counted
 // -----------------
-// - **Arithmetic roots only** (project scope): `Record` updates stats only when the root
-//   expression is a `BoundFunctionExpression` for DuckDB's scalar arithmetic operators
-//   (`+`, `-`, `*`, `/`, `//`, `%`), including unary `-`. Comparisons, casts, functions,
-//   etc. are ignored so the profiler aligns with an arithmetic-only JIT/compiler/cache path.
+// - **JIT-relevant roots:** `Record` updates stats when the root is either (a) a
+//   `BoundFunctionExpression` for scalar arithmetic (`+`, `-`, `*`, `/`, `//`, `%`), or
+//   (b) any expression `JITCompiler::CanCompile` accepts (numeric comparisons, conjunctions,
+//   casts, etc.). Everything else is skipped.
 // - Execution is vectorized: one "evaluation" in the executor processes up to N rows
 //   (a batch). For eligible roots, `Record(expr, tuple_count)` adds `tuple_count` to that
 //   expression's bucket (typically the batch size, or the selection path row count).
@@ -53,7 +53,7 @@
 // ----------------------------------------
 // - `ExpressionExecutor::Execute(const Expression &, ...)` after the `count == 0` guard.
 // - `Select(BoundComparisonExpression)` / `Select(BoundBetweenExpression)` call `Record` for
-//   filter batches; with arithmetic-only eligibility, those roots usually do not increment counts.
+//   filter batches; compilable predicates increment hotness alongside projection paths.
 //
 // Typical usage
 // -------------
@@ -64,9 +64,10 @@
 //   JITProfiler::GetInstance().PrintStats();
 //   // or ExportSnapshot() for structured inspection
 //
-// JIT compilation hookup (future)
-// --------------------------------
-// - Call `SetHotnessThreshold` so hot labels are maintained in `hot_labeled_fingerprints`.
+// JIT compilation hookup
+// ----------------------
+// - `JITDispatcher::SetCompilationThreshold` also calls `SetHotnessThreshold` with the same
+//   value so hot labels match compile policy. The dispatcher default is 1000 tuples.
 // - Use `IsExpressionHot(expr)` or `IsFingerprintHot(fp)` before enqueueing JIT work.
 // - Optionally `SetFingerprintBecameHotCallback` to push a fingerprint into a compile queue
 //   the first time it crosses the threshold (runs outside the profiler lock).
@@ -142,8 +143,9 @@ public:
 	//! Used for tests and tooling; must match what `Record` aggregates on.
 	DUCKDB_API static uint64_t Fingerprint(const Expression &expr);
 
-	//! True iff `expr` is a bound scalar arithmetic operator tracked by `Record` (same rule
-	//! a future JIT compiler should use for eligibility).
+	//! True iff `expr` is a bound scalar arithmetic operator (`+`, `-`, `*`, `/`, `//`, `%`).
+	//! `Record` also includes any expression `JITCompiler::CanCompile` accepts; use this
+	//! helper when you only care about the arithmetic subset.
 	DUCKDB_API static bool ProfilesAsArithmeticRoot(const Expression &expr);
 
 	//! Sum of tuple counts recorded for this expression's fingerprint (global totals).

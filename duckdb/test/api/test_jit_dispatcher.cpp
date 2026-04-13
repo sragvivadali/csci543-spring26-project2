@@ -68,8 +68,8 @@ TEST_CASE("JITDispatcher compilation threshold logic", "[jit_dispatcher]") {
 	auto &dispatcher = JITDispatcher::GetInstance();
 	auto &profiler = JITProfiler::GetInstance();
 	
-	dispatcher.SetCompilationThreshold(1000);
 	profiler.Reset();
+	dispatcher.SetCompilationThreshold(1000);
 	
 	auto expr = MakeIntCompare(ExpressionType::COMPARE_GREATERTHAN);
 	

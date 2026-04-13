@@ -3,7 +3,6 @@
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include "duckdb/common/types/uuid.hpp"
 #include "duckdb/execution/jit/jit_dispatcher.hpp"
-#include "duckdb/execution/jit/jit_profiler.hpp"
 
 namespace duckdb {
 
@@ -178,8 +177,9 @@ static void VerifyNullHandling(const BoundFunctionExpression &expr, DataChunk &a
 void ExpressionExecutor::Execute(const BoundFunctionExpression &expr, ExpressionState *state,
                                  const SelectionVector *sel, idx_t count, Vector &result) {
 	// ── JIT fast path ──────────────────────────────────────────────────────────
-	// Record profiling data (no-op for non-arithmetic expressions).
-	JITProfiler::GetInstance().Record(expr, count);
+	// Profiling: JITProfiler::Record is already called once from ExpressionExecutor::Execute
+	// for this batch (before dispatch). Do not call Record again here — it would double-count
+	// tuple hotness for arithmetic / JIT-eligible function roots.
 	{
 		auto &dispatcher = JITDispatcher::GetInstance();
 		// JIT requires: master switch on, a source DataChunk to read raw columns from,
