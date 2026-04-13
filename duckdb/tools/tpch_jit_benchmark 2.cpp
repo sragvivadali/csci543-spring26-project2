@@ -27,6 +27,7 @@
 #include "duckdb/execution/jit/jit_dispatcher.hpp"
 #include "duckdb/execution/jit/jit_profiler.hpp"
 #include "duckdb/execution/jit/jit_cache.hpp"
+#include "duckdb/execution/jit/jit_compiler.hpp"
 #include "tpch_extension.hpp"
 
 #include <iostream>
@@ -105,28 +106,28 @@ struct TpchResult {
 
 int main(int argc, char *argv[]) {
     // --- parse args ---
-    // Usage: tpch_jit_benchmark [sf] [iterations] [csv_out] [jit_threshold]
     double sf         = (argc > 1) ? std::stod(argv[1]) : 0.1;
     int    iterations = (argc > 2) ? std::stoi(argv[2]) : 3;
     std::string csv_out = (argc > 3) ? argv[3] : "tpch_jit_results.csv";
-    idx_t  jit_threshold = (argc > 4) ? (idx_t)std::stoull(argv[4]) : 1000;
 
     PrintBanner("TPC-H JIT vs. Vectorization Benchmark  (CSCI 543)");
-    std::cout << "  Scale factor      : SF" << sf      << "\n"
-              << "  Iterations        : "   << iterations << " (+ 1 warm-up)\n"
-              << "  Output CSV        : "   << csv_out  << "\n"
-              << "  JIT threshold     : "   << jit_threshold << " tuples\n\n";
+    std::cout << "  Scale factor : SF" << sf      << "\n"
+              << "  Iterations   : "   << iterations << " (+ 1 warm-up)\n"
+              << "  Output CSV   : "   << csv_out  << "\n\n";
 
     // -----------------------------------------------------------------------
     // 1.  Open database and load TPC-H extension
     // -----------------------------------------------------------------------
     DuckDB db(nullptr);
-
-    // Register the built-in TPC-H extension so dbgen() is available.
-    // (Statically linked when built with -DBUILD_TPCH_EXTENSION=1)
-    db.LoadStaticExtension<TpchExtension>();
-
     Connection conn(db);
+
+    // When built with -DBUILD_EXTENSIONS="tpch", the TPC-H extension is statically
+    // linked and auto-registered. Confirm it is available before proceeding.
+    if (!db.ExtensionIsLoaded("tpch")) {
+        std::cerr << "ERROR: TPC-H extension is not loaded.\n"
+                  << "       Rebuild with: cmake -DBUILD_EXTENSIONS=\"tpch\" ...\n";
+        return 1;
+    }
 
     // -----------------------------------------------------------------------
     // 2.  Generate TPC-H data
@@ -148,10 +149,8 @@ int main(int argc, char *argv[]) {
     auto &profiler   = JITProfiler::GetInstance();
     auto &cache      = JITCache::GetInstance();
 
-    // Threshold controls how many tuples an expression must see before JIT compilation fires.
-    // Lower = compiles sooner (more JIT coverage, more compilation overhead).
-    // Higher = compiles later (less coverage, better amortization of compile cost).
-    dispatcher.SetCompilationThreshold(jit_threshold);
+    // Low threshold so JIT triggers quickly during benchmarking
+    dispatcher.SetCompilationThreshold(1000);
     cache.SetMaxEntries(256);
 
     // -----------------------------------------------------------------------
@@ -183,12 +182,14 @@ int main(int argc, char *argv[]) {
         dispatcher.SetEnableJIT(false);
         profiler.Reset();
         cache.Clear();
+        JITCompiler::GetInstance().ReleaseAllModules();
         double vec_ms = BenchmarkQuery(conn, sql, iterations);
 
         // -- JIT run (JIT enabled = LLVM-compiled expressions) --
         dispatcher.SetEnableJIT(true);
         profiler.Reset();
         cache.Clear();
+        JITCompiler::GetInstance().ReleaseAllModules();
         double jit_ms = BenchmarkQuery(conn, sql, iterations);
 
         bool jit_err = (jit_ms < 0.0);

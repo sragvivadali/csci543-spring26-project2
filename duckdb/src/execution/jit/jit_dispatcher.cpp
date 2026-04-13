@@ -11,10 +11,13 @@
 #include "duckdb/execution/jit/jit_dispatcher.hpp"
 #include "duckdb/execution/jit/jit_profiler.hpp"
 #include "duckdb/execution/jit/jit_cache.hpp"
+#include "duckdb/execution/jit/jit_compiler.hpp"
 #include "duckdb/execution/expression_executor.hpp"
 #include "duckdb/common/vector.hpp"
+#include "duckdb/common/types/vector.hpp"
 
 #include <iostream>
+#include <mutex>
 
 namespace duckdb {
 
@@ -107,16 +110,106 @@ bool JITDispatcher::ShouldCompile(const Expression &expr) const {
 }
 
 bool JITDispatcher::TryCompile(const Expression &expr) {
+	// Serialise compilation — JITCompiler::Compile is not thread-safe.
+	// Check the cache first under the lock so we never double-compile.
+	static std::mutex compile_mutex;
+	std::lock_guard<std::mutex> compile_guard(compile_mutex);
+
+	if (JITCache::GetInstance().Lookup(expr)) {
+		// Another thread compiled this while we were waiting for the lock.
+		return true;
+	}
+
 	compilation_attempts++;
 
-	// STUB: replace with JITCompiler::GetInstance().Compile(expr), wrap JITCompiledFn into
-	// JITCompiledFunction, JITCache::GetInstance().Insert(expr, wrapper, compile_time_us).
-	// Until then, stats reflect attempts/failures and the interpreter always runs.
-	std::cout << "[JIT] Compilation attempted for expression fingerprint " << JITProfiler::Fingerprint(expr)
-	          << " (stub - waiting for LLVM compiler)" << std::endl;
+	// Ask the LLVM compiler if it can handle this expression tree.
+	auto &compiler = JITCompiler::GetInstance();
+	if (!compiler.CanCompile(expr)) {
+		compilation_failures++;
+		return false;
+	}
 
-	compilation_failures++;
-	return false;
+	// Compile to a raw native function pointer.
+	JITCompiledFn fn = compiler.Compile(expr);
+	if (!fn) {
+		compilation_failures++;
+		return false;
+	}
+
+	std::cout << "[JIT] Compiled expression fingerprint " << JITProfiler::Fingerprint(expr) << std::endl;
+
+	// ── Build a Vector-level wrapper around the raw JIT function ──────────────
+	//
+	// Raw fn signature:
+	//   void fn(void** col_data, uint8_t** col_valid,
+	//           void* result_data, uint8_t* result_valid, uint64_t count)
+	//
+	// col_data[c] / col_valid[c] are indexed by BoundRef::index (source column
+	// number in the DataChunk).  The executor passes col_ptrs[c] = &chunk->data[c]
+	// so col_data[c] maps to the correct raw column array.
+	//
+	// Safety: we never Flatten() the caller's columns in-place; instead we create
+	// local Reference copies and flatten only those, so the shared DataChunk
+	// buffers are never modified.
+	// ─────────────────────────────────────────────────────────────────────────
+	const LogicalType return_type = expr.return_type;
+
+	JITCompiledFunction wrapper = [fn, return_type](Vector **inputs, Vector &result, idx_t count) {
+		constexpr idx_t MAX_COLS = 64;
+
+		// Local flat copies of each input column (preserves originals).
+		vector<Vector> flat_copies;
+		flat_copies.reserve(MAX_COLS);
+		vector<vector<uint8_t>> valid_bufs; // per-byte validity arrays for JIT fn
+		valid_bufs.reserve(MAX_COLS);
+
+		void    *col_data [MAX_COLS] = {};
+		uint8_t *col_valid[MAX_COLS] = {};
+
+		for (idx_t c = 0; c < MAX_COLS && inputs[c]; c++) {
+			// Shallow reference then flatten only the local copy
+			flat_copies.emplace_back(inputs[c]->GetType());
+			flat_copies.back().Reference(*inputs[c]);
+			flat_copies.back().Flatten(count);
+
+			col_data[c] = FlatVector::GetData(flat_copies.back());
+
+			// Convert DuckDB bitmask validity → per-byte (1=valid, 0=null)
+			auto &validity = FlatVector::Validity(flat_copies.back());
+			valid_bufs.emplace_back(count);
+			for (idx_t r = 0; r < count; r++) {
+				valid_bufs.back()[r] = validity.RowIsValid(r) ? 1 : 0;
+			}
+			col_valid[c] = valid_bufs.back().data();
+		}
+
+		// Allocate a fresh flat output vector and get its raw data pointer.
+		// 'out_vec' is FLAT_VECTOR by default; Flatten() is therefore a no-op.
+		Vector out_vec(return_type);
+		out_vec.Flatten(count);
+		void *result_data = FlatVector::GetData(out_vec);
+
+		// Output validity byte array (pre-filled as all valid).
+		vector<uint8_t> result_valid_buf(count, 1);
+
+		// Run the JIT-compiled native function.
+		fn(col_data, col_valid, result_data, result_valid_buf.data(), static_cast<uint64_t>(count));
+
+		// Propagate NULL markers back into the output vector's validity mask.
+		auto &out_validity = FlatVector::Validity(out_vec);
+		for (idx_t r = 0; r < count; r++) {
+			if (result_valid_buf[r] == 0) {
+				out_validity.SetInvalid(r);
+			}
+		}
+
+		// Point the caller's result vector at our output (shared buffer reference).
+		result.Reference(out_vec);
+	};
+
+	JITCache::GetInstance().Insert(expr, std::move(wrapper), /*compile_time_us=*/0);
+	compilation_successes++;
+	return true;
 }
 
 } // namespace duckdb

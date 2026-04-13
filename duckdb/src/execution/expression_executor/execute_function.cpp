@@ -2,6 +2,8 @@
 #include "duckdb/execution/expression_executor.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include "duckdb/common/types/uuid.hpp"
+#include "duckdb/execution/jit/jit_dispatcher.hpp"
+#include "duckdb/execution/jit/jit_profiler.hpp"
 
 namespace duckdb {
 
@@ -175,6 +177,31 @@ static void VerifyNullHandling(const BoundFunctionExpression &expr, DataChunk &a
 
 void ExpressionExecutor::Execute(const BoundFunctionExpression &expr, ExpressionState *state,
                                  const SelectionVector *sel, idx_t count, Vector &result) {
+	// ── JIT fast path ──────────────────────────────────────────────────────────
+	// Record profiling data (no-op for non-arithmetic expressions).
+	JITProfiler::GetInstance().Record(expr, count);
+	{
+		auto &dispatcher = JITDispatcher::GetInstance();
+		// JIT requires: master switch on, a source DataChunk to read raw columns from,
+		// and no active SelectionVector (JIT loop iterates 0..count-1 sequentially and
+		// cannot honour a sel vector).
+		if (dispatcher.IsJITEnabled() && chunk != nullptr && sel == nullptr) {
+			constexpr idx_t MAX_JIT_COLS = 64;
+			const idx_t ncols = chunk->ColumnCount();
+			if (ncols > 0 && ncols <= MAX_JIT_COLS) {
+				// col_ptrs is indexed by source column number (BoundRef::index),
+				// not by argument position.  inputs[c] == &chunk->data[c].
+				Vector *col_ptrs[MAX_JIT_COLS + 1] = {};
+				for (idx_t c = 0; c < ncols; c++) {
+					col_ptrs[c] = &chunk->data[c];
+				}
+				if (dispatcher.TryExecuteJIT(expr, *this, col_ptrs, result, count)) {
+					return; // JIT handled it — skip child evaluation and interpreter
+				}
+			}
+		}
+	}
+	// ── Vectorized interpreter path ────────────────────────────────────────────
 	state->intermediate_chunk.Reset();
 	auto &arguments = state->intermediate_chunk;
 	if (!state->types.empty()) {
