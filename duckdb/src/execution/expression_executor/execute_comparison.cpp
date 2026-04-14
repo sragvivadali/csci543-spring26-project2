@@ -6,6 +6,7 @@
 #include "duckdb/common/vector_operations/binary_executor.hpp"
 // CSCI 543: same profiler hook as expression_executor — counts eligible roots per filter batch.
 #include "duckdb/execution/jit/jit_profiler.hpp"
+#include "duckdb/execution/jit/jit_dispatcher.hpp"
 
 #include <algorithm>
 
@@ -366,6 +367,49 @@ idx_t ExpressionExecutor::Select(const BoundComparisonExpression &expr, Expressi
 	// inside Record (see jit_profiler.hpp). Projection comparisons go through Execute() which
 	// also calls Record on the root.
 	JITProfiler::GetInstance().Record(expr, count);
+
+	// JIT fast path for filter predicates.
+	// Keep identical guards to execute_function.cpp: only dense scans (sel == nullptr)
+	// with a source chunk and bounded column count.
+	{
+		auto &dispatcher = JITDispatcher::GetInstance();
+		if (dispatcher.IsJITEnabled() && chunk != nullptr && sel == nullptr) {
+			constexpr idx_t MAX_JIT_COLS = 64;
+			const idx_t ncols = chunk->ColumnCount();
+			if (ncols > 0 && ncols <= MAX_JIT_COLS) {
+				Vector *col_ptrs[MAX_JIT_COLS + 1] = {};
+				JITDispatcher::PopulateSparseColumnPointers(expr, *chunk, col_ptrs, MAX_JIT_COLS);
+
+				bool intermediate_bools[STANDARD_VECTOR_SIZE];
+				Vector jit_result(LogicalType::BOOLEAN, data_ptr_cast(intermediate_bools));
+				if (dispatcher.TryExecuteJIT(expr, *this, col_ptrs, jit_result, count)) {
+					UnifiedVectorFormat idata;
+					jit_result.ToUnifiedFormat(count, idata);
+					auto bdata = UnifiedVectorFormat::GetData<uint8_t>(idata);
+					auto base_sel = FlatVector::IncrementalSelectionVector();
+					idx_t true_count = 0;
+					idx_t false_count = 0;
+					for (idx_t i = 0; i < count; i++) {
+						const auto bidx = idata.sel->get_index(i);
+						const auto ridx = base_sel->get_index(i);
+						const bool selected = idata.validity.RowIsValid(bidx) && bdata[bidx] > 0;
+						if (selected) {
+							if (true_sel) {
+								true_sel->set_index(true_count, ridx);
+							}
+							true_count++;
+						} else {
+							if (false_sel) {
+								false_sel->set_index(false_count, ridx);
+							}
+							false_count++;
+						}
+					}
+					return true_sel ? true_count : count - false_count;
+				}
+			}
+		}
+	}
 	// resolve the children
 	state->intermediate_chunk.Reset();
 	auto &left = state->intermediate_chunk.data[0];

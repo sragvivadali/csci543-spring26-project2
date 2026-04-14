@@ -189,12 +189,9 @@ void ExpressionExecutor::Execute(const BoundFunctionExpression &expr, Expression
 			constexpr idx_t MAX_JIT_COLS = 64;
 			const idx_t ncols = chunk->ColumnCount();
 			if (ncols > 0 && ncols <= MAX_JIT_COLS) {
-				// col_ptrs is indexed by source column number (BoundRef::index),
-				// not by argument position.  inputs[c] == &chunk->data[c].
+				// Sparse col_ptrs: only columns referenced by BoundRef in this expression.
 				Vector *col_ptrs[MAX_JIT_COLS + 1] = {};
-				for (idx_t c = 0; c < ncols; c++) {
-					col_ptrs[c] = &chunk->data[c];
-				}
+				JITDispatcher::PopulateSparseColumnPointers(expr, *chunk, col_ptrs, MAX_JIT_COLS);
 				if (dispatcher.TryExecuteJIT(expr, *this, col_ptrs, result, count)) {
 					return; // JIT handled it — skip child evaluation and interpreter
 				}

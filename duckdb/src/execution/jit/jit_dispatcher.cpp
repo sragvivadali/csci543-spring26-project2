@@ -15,11 +15,81 @@
 #include "duckdb/execution/expression_executor.hpp"
 #include "duckdb/common/vector.hpp"
 #include "duckdb/common/types/vector.hpp"
+#include "duckdb/common/types.hpp"
+#include "duckdb/common/types/data_chunk.hpp"
+#include "duckdb/common/helper.hpp"
+#include "duckdb/planner/expression/list.hpp"
 
 #include <iostream>
 #include <mutex>
+#include <memory>
+#include <vector>
+#include <cstdlib>
 
 namespace duckdb {
+
+//! Verbose per-attempt compile logs (default off — large scans can trigger TryCompile many times).
+static bool JITLogCompileEvents() {
+	const char *e = std::getenv("JIT_LOG_COMPILE");
+	return e && e[0] != '\0' && (e[0] == '1' || e[0] == 'y' || e[0] == 'Y');
+}
+
+//! Recursively collect BoundReferenceExpression column indices (JIT codegen only loads these).
+static void CollectJITReferencedColumnIndices(const Expression &expr, vector<idx_t> &out) {
+	switch (expr.GetExpressionClass()) {
+	case ExpressionClass::BOUND_REF:
+		out.push_back(expr.Cast<BoundReferenceExpression>().index);
+		return;
+	case ExpressionClass::BOUND_FUNCTION:
+		for (const auto &ch : expr.Cast<BoundFunctionExpression>().children) {
+			CollectJITReferencedColumnIndices(*ch, out);
+		}
+		return;
+	case ExpressionClass::BOUND_COMPARISON: {
+		auto &cmp = expr.Cast<BoundComparisonExpression>();
+		CollectJITReferencedColumnIndices(*cmp.left, out);
+		CollectJITReferencedColumnIndices(*cmp.right, out);
+		return;
+	}
+	case ExpressionClass::BOUND_CONJUNCTION:
+		for (const auto &ch : expr.Cast<BoundConjunctionExpression>().children) {
+			CollectJITReferencedColumnIndices(*ch, out);
+		}
+		return;
+	case ExpressionClass::BOUND_CAST:
+		CollectJITReferencedColumnIndices(*expr.Cast<BoundCastExpression>().child, out);
+		return;
+	default:
+		return;
+	}
+}
+
+void JITDispatcher::PopulateSparseColumnPointers(const Expression &expr, DataChunk &chunk, Vector **col_ptrs,
+                                               idx_t max_cols) {
+	vector<idx_t> refs;
+	CollectJITReferencedColumnIndices(expr, refs);
+	const idx_t ncols = chunk.ColumnCount();
+	for (const auto ref : refs) {
+		if (ref < ncols && ref < max_cols) {
+			col_ptrs[ref] = &chunk.data[ref];
+		}
+	}
+}
+
+//! JIT wrapper only flattens non-null slots (sparse column pointers). Reject INVALID types
+//! on those columns only.
+static bool InputsSafeForJITMaterialize(Vector **inputs) {
+	constexpr idx_t MAX_COLS = 64;
+	for (idx_t c = 0; c < MAX_COLS; c++) {
+		if (!inputs[c]) {
+			continue;
+		}
+		if (inputs[c]->GetType().InternalType() == PhysicalType::INVALID) {
+			return false;
+		}
+	}
+	return true;
+}
 
 JITDispatcher::JITDispatcher()
     : compilation_threshold(1000), enable_jit(false), jit_executions(0), interpreter_executions(0),
@@ -36,6 +106,10 @@ bool JITDispatcher::TryExecuteJIT(const Expression &expr, ExpressionExecutor &ex
                                   idx_t count) {
 	(void)executor; // Reserved for future context (allocator, settings) when running JIT.
 	if (!enable_jit) {
+		interpreter_executions++;
+		return false;
+	}
+	if (!InputsSafeForJITMaterialize(inputs)) {
 		interpreter_executions++;
 		return false;
 	}
@@ -132,8 +206,12 @@ bool JITDispatcher::TryCompile(const Expression &expr) {
 
 	// Ask the LLVM compiler if it can handle this expression tree.
 	auto &compiler = JITCompiler::GetInstance();
+	const auto fp = JITProfiler::Fingerprint(expr);
 	if (!compiler.CanCompile(expr)) {
 		compilation_failures++;
+		if (JITLogCompileEvents()) {
+			std::cout << "[JIT] Rejected fingerprint " << fp << " (CanCompile=false)" << std::endl;
+		}
 		return false;
 	}
 
@@ -141,10 +219,15 @@ bool JITDispatcher::TryCompile(const Expression &expr) {
 	JITCompiledFn fn = compiler.Compile(expr);
 	if (!fn) {
 		compilation_failures++;
+		if (JITLogCompileEvents()) {
+			std::cout << "[JIT] Compile failed fingerprint " << fp << " (LLVM Compile returned null)" << std::endl;
+		}
 		return false;
 	}
 
-	std::cout << "[JIT] Compiled expression fingerprint " << JITProfiler::Fingerprint(expr) << std::endl;
+	if (JITLogCompileEvents()) {
+		std::cout << "[JIT] Compiled expression fingerprint " << fp << std::endl;
+	}
 
 	// ── Build a Vector-level wrapper around the raw JIT function ──────────────
 	//
@@ -153,8 +236,8 @@ bool JITDispatcher::TryCompile(const Expression &expr) {
 	//           void* result_data, uint8_t* result_valid, uint64_t count)
 	//
 	// col_data[c] / col_valid[c] are indexed by BoundRef::index (source column
-	// number in the DataChunk).  The executor passes col_ptrs[c] = &chunk->data[c]
-	// so col_data[c] maps to the correct raw column array.
+	// number in the DataChunk).  The executor passes sparse col_ptrs: only
+	// referenced columns are set to &chunk->data[c]; others stay null.
 	//
 	// Safety: we never Flatten() the caller's columns in-place; instead we create
 	// local Reference copies and flatten only those, so the shared DataChunk
@@ -165,30 +248,32 @@ bool JITDispatcher::TryCompile(const Expression &expr) {
 	JITCompiledFunction wrapper = [fn, return_type](Vector **inputs, Vector &result, idx_t count) {
 		constexpr idx_t MAX_COLS = 64;
 
-		// Local flat copies of each input column (preserves originals).
-		vector<Vector> flat_copies;
-		flat_copies.reserve(MAX_COLS);
-		vector<vector<uint8_t>> valid_bufs; // per-byte validity arrays for JIT fn
-		valid_bufs.reserve(MAX_COLS);
+		// Sparse `inputs`: only non-null entries are referenced by the compiled expression.
+		// Keep one flat copy per used column index so buffers stay alive for the native call.
+		vector<std::unique_ptr<Vector>> flat_by_col(MAX_COLS);
+		vector<vector<uint8_t>> valid_by_col(MAX_COLS);
 
 		void    *col_data [MAX_COLS] = {};
 		uint8_t *col_valid[MAX_COLS] = {};
 
-		for (idx_t c = 0; c < MAX_COLS && inputs[c]; c++) {
-			// Shallow reference then flatten only the local copy
-			flat_copies.emplace_back(inputs[c]->GetType());
-			flat_copies.back().Reference(*inputs[c]);
-			flat_copies.back().Flatten(count);
-
-			col_data[c] = FlatVector::GetData(flat_copies.back());
-
-			// Convert DuckDB bitmask validity → per-byte (1=valid, 0=null)
-			auto &validity = FlatVector::Validity(flat_copies.back());
-			valid_bufs.emplace_back(count);
-			for (idx_t r = 0; r < count; r++) {
-				valid_bufs.back()[r] = validity.RowIsValid(r) ? 1 : 0;
+		for (idx_t c = 0; c < MAX_COLS; c++) {
+			if (!inputs[c]) {
+				col_data[c] = nullptr;
+				col_valid[c] = nullptr;
+				continue;
 			}
-			col_valid[c] = valid_bufs.back().data();
+			flat_by_col[c] = make_uniq<Vector>(inputs[c]->GetType());
+			flat_by_col[c]->Reference(*inputs[c]);
+			flat_by_col[c]->Flatten(count);
+
+			col_data[c] = FlatVector::GetData(*flat_by_col[c]);
+
+			auto &validity = FlatVector::Validity(*flat_by_col[c]);
+			valid_by_col[c].resize(count);
+			for (idx_t r = 0; r < count; r++) {
+				valid_by_col[c][r] = validity.RowIsValid(r) ? 1 : 0;
+			}
+			col_valid[c] = valid_by_col[c].data();
 		}
 
 		// Allocate a fresh flat output vector and get its raw data pointer.

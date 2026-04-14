@@ -19,7 +19,7 @@ This repository extends a **vendored DuckDB** tree with a research-oriented **JI
 | **Executor** | **`expression_executor.cpp`**: **`Record`** after the `count == 0` guard; **comments** describe where to call **`TryExecuteJIT`** for end-to-end JIT. |
 | **Tests & tools** | `duckdb/test/api/test_jit_*.cpp`; `jit_profiler_demo`, `jit_benchmark_demo`. |
 
-**Inline documentation:** CSCI 543-related **file headers** and **local comments** live in the files above (search for `CSCI 543` or read **[docs/jit-source-tour.md](docs/jit-source-tour.md)**).
+**Inline documentation:** CSCI 543-related file headers and local comments live in the JIT sources (search for `CSCI 543`) and are summarized in **[docs/03-source-tour.md](docs/03-source-tour.md)**.
 
 ## Build & tests
 
@@ -46,13 +46,13 @@ Runtime: **`JITDispatcher::SetEnableJIT(true)`** (and threshold tuning) in your 
 
 | Document | Contents |
 |----------|----------|
-| [docs/jit-source-tour.md](docs/jit-source-tour.md) | **Start here** — file map, execution flow, extension notes. |
-| [docs/architecture.md](docs/architecture.md) | Diagrams and narrative for the JIT pipeline. |
-| [docs/codebase-vs-upstream-duckdb.md](docs/codebase-vs-upstream-duckdb.md) | Diff vs stock DuckDB; integration **status**. |
-| [docs/runtime-implementation.md](docs/runtime-implementation.md) | Cache, dispatcher, benchmark API (detail). |
-| [docs/part-c-summary.md](docs/part-c-summary.md) | Short Part C / runtime summary. |
-| [docs/usage-examples.md](docs/usage-examples.md) | C++ examples. |
-| [docs/README.md](docs/README.md) | Index of all docs. |
+| [docs/README.md](docs/README.md) | Documentation home and reading order. |
+| [docs/01-overview.md](docs/01-overview.md) | Project goals, component map, and build prerequisites. |
+| [docs/02-architecture.md](docs/02-architecture.md) | Runtime execution model and dispatch flow. |
+| [docs/03-source-tour.md](docs/03-source-tour.md) | File-by-file implementation map. |
+| [docs/04-runtime-details.md](docs/04-runtime-details.md) | Dispatcher/profiler semantics and implementation notes. |
+| [docs/05-benchmarking.md](docs/05-benchmarking.md) | Commands for TPC-H, TPC-DS, and microbenchmark runs. |
+| [docs/06-challenges-and-open-issues.md](docs/06-challenges-and-open-issues.md) | Engineering challenges, fixes, and remaining open issues. |
 
 Upstream DuckDB: **`duckdb/README.md`**.
 
@@ -63,15 +63,21 @@ Upstream DuckDB: **`duckdb/README.md`**.
 | | | | | | | |
 | | | | | | | |
 
-Export CSV (e.g. **`JITBenchmark::ExportCSV`**) under **`docs/benchmarks/`** and link filenames here.
+Export CSV (e.g. **`JITBenchmark::ExportCSV`**) under **`docs/benchmark/`** and link filenames here.
 
 ## Repository layout
 
 ```
 ├── README.md
 ├── docs/                     # Project documentation (JIT extension)
-│   ├── jit-source-tour.md    # Code map + integration points
-│   └── benchmarks/           # Optional: drop CSV exports here
+│   ├── README.md             # Documentation index/read order
+│   ├── 01-overview.md
+│   ├── 02-architecture.md
+│   ├── 03-source-tour.md
+│   ├── 04-runtime-details.md
+│   ├── 05-benchmarking.md
+│   ├── 06-challenges-and-open-issues.md
+│   └── benchmark/            # Benchmark CSV/log artifacts
 ├── duckdb/
 │   ├── src/execution/jit/
 │   └── ...
