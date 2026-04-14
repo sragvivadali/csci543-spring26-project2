@@ -237,48 +237,61 @@ export DUCKDB_BENCHMARK_THREADS=2
 
 ## Benchmarks
 
-We evaluate the system with three workload families:
+We ship three standalone tools that compare **DuckDB’s normal vectorized path** (JIT disabled) against the **JIT-enabled path** on the same SQL. Each tool prints timings to the console and can write a CSV under `docs/benchmark/` for plots and regression tracking.
 
-- **TPC-H**
-- **TPC-DS**
-- **Custom microbenchmarks**
+For build flags, argument reference, stress patterns, and how to read the micro-benchmark summary table, see [`docs/05-benchmarking.md`](docs/05-benchmarking.md).
 
-### TPC-H
+### TPC-H (`tpch_jit_benchmark`)
+
+Runs the standard TPC-H query set at a chosen scale factor, warms up, then times repeated iterations. Arguments: `scale_factor iterations csv_out [jit_tuple_threshold]`.
 
 ```bash
 cd duckdb
 ./build/tools/tpch_jit_benchmark 0.1 3 ../docs/benchmark/tpch_jit_results.csv 1000
 ```
 
-### TPC-DS
+### TPC-DS (`tpcds_jit_benchmark`)
+
+Same idea for TPC-DS: generate data at `sf`, run every template query with JIT off vs on. You can pass **multiple** compilation thresholds in one invocation to sweep hotness policy (default thresholds are `100 1000 10000` if you omit them). Arguments: `scale_factor iterations csv_out [threshold ...]`.
 
 ```bash
 cd duckdb
 ./build/tools/tpcds_jit_benchmark 0.01 3 ../docs/benchmark/tpcds_jit_results.csv 100 1000 10000
 ```
 
-### Microbenchmarks
+### JIT micro-benchmark (`jit_micro_benchmark`)
+
+Synthetic table `t(a…e BIGINT)` with deterministic `range()` data. For **each named scenario** the tool:
+
+1. Resets JIT stats, disables JIT, clears the compile cache, runs one warm-up query, then averages `repeat` timed runs → **vector avg (ms)**.
+2. Resets again, enables JIT, clears cache, same warm-up + `repeat` runs → **JIT avg (ms)** and **JITDispatcher** counters (JIT vs interpreter executions, compile attempts/successes/failures).
+
+Arguments: `rows repeat_per_scenario jit_tuple_threshold [csv_out]`.
+
+Example (matches a typical course demo: 200k rows, 1000 repeats, threshold 10k tuples):
 
 ```bash
 cd duckdb
-./build/tools/jit_micro_benchmark 100000 5 1000 ../docs/benchmark/jit_micro_results.csv
+./build/tools/jit_micro_benchmark 200000 1000 10000 ../docs/benchmark/jit_micro_results.csv
 ```
 
-The microbenchmark suite includes:
+| Scenario | What it exercises |
+|----------|-------------------|
+| `projection` | Three arithmetic outputs per row — typical projection-heavy JIT. |
+| `filter` | Arithmetic predicate with `AND` — filter-side JIT. |
+| `mixed` | Projection under an arithmetic filter — both paths together. |
+| `complex` | One heavy arithmetic expression — often strong JIT when cost is amortized. |
+| `many_tiny` | Many cheap roots per row — dispatch / per-root overhead; vectorized often wins. |
+| `tiny_heavy` | Same kernel as `complex` over `LIMIT 8192` — low `jit_pct` until hot; threshold + overhead. |
+| `case_expr` | `CASE WHEN` — compare vs pure arithmetic. |
+| `between_filter` | `BETWEEN` — often **no** `JITDispatcher` compile/execute on this hook path. |
+| `branchy_or` | `OR` + `AND` — branchier predicate than `filter`. |
 
-- pure arithmetic projection
-- arithmetic filter
-- mixed filter + projection
+The printed **Summary** block lists `jit_pct` (dispatcher JIT execution share), `cmp_*` (compile attempts/outcomes), and `vec_ms` / `jit_ms` / `speedup` (end-to-end query latency). Absolute milliseconds vary by machine; compare **patterns** across scenarios (for example `between_filter` vs `projection`).
 
-### Results Summary
+Optional: `export DUCKDB_BENCHMARK_THREADS=2` for stable comparisons on laptops, and `JIT_LOG_COMPILE=1` to print per-expression compile lines from the dispatcher (see the benchmark guide).
 
-| Scenario | Vectorized | JIT | Speedup |
-|---|---:|---:|---:|
-| Projection | 0.184ms | 0.168ms | 1.09x |
-| Filter | 0.121ms | 0.114ms | 1.05x |
-| Mixed | 0.116ms | 0.123ms | 0.94x |
-
-Raw benchmark outputs are stored in `docs/benchmark/`.
+Raw CSV outputs and saved logs live in `docs/benchmark/`.
 
 ## Documentation
 
