@@ -1,13 +1,20 @@
-# Documentation index
+# Documentation
 
-| File | Description |
-|------|-------------|
-| [**jit-source-tour.md**](jit-source-tour.md) | **Recommended first read** — maps JIT sources, hooks, and how to extend `Record` / `TryCompile`. |
-| [architecture.md](architecture.md) | JIT system diagrams and data flow. |
-| [codebase-vs-upstream-duckdb.md](codebase-vs-upstream-duckdb.md) | What this repo adds vs stock DuckDB; file map; integration status. |
-| [runtime-implementation.md](runtime-implementation.md) | Cache, dispatcher, benchmark implementation notes. |
-| [part-c-summary.md](part-c-summary.md) | Short summary of runtime (Part C) work. |
-| [usage-examples.md](usage-examples.md) | C++ usage examples. |
-| [benchmarks/README.md](benchmarks/README.md) | Placeholder for exported benchmark artifacts. |
+This folder is organized for fast onboarding and professional review.
 
-Return to the repository **[README.md](../README.md)** for overview, build commands, and the benchmark results table.
+## Reading Order
+
+1. [Overview](01-overview.md)
+2. [Architecture](02-architecture.md)
+3. [Source Tour](03-source-tour.md)
+4. [Runtime Details](04-runtime-details.md) - runtime semantics, edge cases, and fixes
+5. [Benchmark Guide](05-benchmarking.md)
+6. [Challenges and Open Issues](06-challenges-and-open-issues.md)
+
+## Benchmark Artifacts
+
+Raw benchmark outputs (CSV and logs) are stored in [`docs/benchmark`](benchmark/).
+
+## Scope
+
+These docs describe the JIT-related extensions in this repository. For upstream DuckDB usage, refer to [`duckdb/README.md`](../duckdb/README.md).

@@ -115,7 +115,7 @@ TEST_CASE("JITProfiler Record aggregates with same key as Fingerprint", "[jit_pr
 	REQUIRE(prof.GetCount(*expr) == 10);
 }
 
-TEST_CASE("JITProfiler Record ignores non-arithmetic roots", "[jit_profiler]") {
+TEST_CASE("JITProfiler Record counts compilable comparisons and arithmetic", "[jit_profiler]") {
 	auto cmp = MakeIntCompare(ExpressionType::COMPARE_GREATERTHAN);
 	auto add = MakeIntBinaryArith("+");
 	auto &prof = JITProfiler::GetInstance();
@@ -126,7 +126,7 @@ TEST_CASE("JITProfiler Record ignores non-arithmetic roots", "[jit_profiler]") {
 
 	prof.Record(*cmp, 1000);
 	prof.Record(*add, 5);
-	REQUIRE(prof.GetCount(*cmp) == 0);
+	REQUIRE(prof.GetCount(*cmp) == 1000);
 	REQUIRE(prof.GetCount(*add) == 5);
 }
 

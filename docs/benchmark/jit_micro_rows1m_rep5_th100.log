@@ -1,0 +1,80 @@
+
+========================================================================
+  JIT micro-benchmark (arithmetic projection / filter / mixed)
+========================================================================
+  Table rows        : 1000000
+  Repeat per query  : 5 (each scenario runs this many times)
+  JIT threshold     : 100 tuples
+  Output CSV        : /Users/sragvivadali/Device/csci543-spring26-project2/docs/benchmark/jit_micro_results_rows1m_rep5_th100.csv
+
+DuckDB worker threads set to 2 (DUCKDB_BENCHMARK_THREADS)
+Creating table t(1000000 rows) …
+Done.
+
+--- projection ---
+SELECT a * b + c, a / (b + 1.0), a * 0.9 - c * 0.1 FROM t
+  Vector avg: 23.593 ms
+  JIT avg:    13.964 ms
+  Speedup:    1.69x
+
+  JITDispatcher stats (projection):
+=== JIT Dispatcher Statistics ===
+JIT enabled: YES
+Compilation threshold: 100 tuples
+
+Execution counts:
+  JIT executions: 8802
+  Interpreter executions: 0
+  JIT usage: 100.00%
+
+Compilation:
+  Attempts: 3
+  Successes: 3
+  Failures: 0
+  Success rate: 100.00%
+
+--- filter ---
+SELECT * FROM t WHERE a * 1.1 > 50 AND b * c < 1000000
+  Vector avg: 10.394 ms
+  JIT avg:    5.035 ms
+  Speedup:    2.06x
+
+  JITDispatcher stats (filter):
+=== JIT Dispatcher Statistics ===
+JIT enabled: YES
+Compilation threshold: 100 tuples
+
+Execution counts:
+  JIT executions: 2934
+  Interpreter executions: 0
+  JIT usage: 100.00%
+
+Compilation:
+  Attempts: 1
+  Successes: 1
+  Failures: 0
+  Success rate: 100.00%
+
+--- mixed ---
+SELECT a * b + c FROM t WHERE a * 1.1 > 50
+  Vector avg: 8.189 ms
+  JIT avg:    11.405 ms
+  Speedup:    0.72x
+
+  JITDispatcher stats (mixed):
+=== JIT Dispatcher Statistics ===
+JIT enabled: YES
+Compilation threshold: 100 tuples
+
+Execution counts:
+  JIT executions: 2934
+  Interpreter executions: 0
+  JIT usage: 100.00%
+
+Compilation:
+  Attempts: 1
+  Successes: 1
+  Failures: 0
+  Success rate: 100.00%
+
+Results written to: /Users/sragvivadali/Device/csci543-spring26-project2/docs/benchmark/jit_micro_results_rows1m_rep5_th100.csv

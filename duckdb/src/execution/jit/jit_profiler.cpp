@@ -1,9 +1,11 @@
 //===----------------------------------------------------------------------===//
 // JITProfiler — fingerprinting + tuple-weighted execution counts (CSCI 543).
-// Hash: FNV-1a over bound expression shape (see HashExpressionTree). Record() gates on
-// ProfilesAsArithmeticRoot so filter/projection comparisons can call Record but often no-op.
+// Hash: FNV-1a over bound expression shape (see HashExpressionTree). Record() attributes
+// tuple hotness for arithmetic roots and for any expression JITCompiler::CanCompile accepts
+// (aligned with dispatcher / LLVM eligibility).
 //===----------------------------------------------------------------------===//
 #include "duckdb/execution/jit/jit_profiler.hpp"
+#include "duckdb/execution/jit/jit_compiler.hpp"
 
 #include "duckdb/planner/expression/list.hpp"
 
@@ -172,9 +174,9 @@ void JITProfiler::PopQueryScope() {
 }
 
 void JITProfiler::Record(const Expression &expr, idx_t tuple_count) {
-	// Extend eligibility here (e.g. OR with JITCompiler::CanCompile) if filter comparisons
-	// should contribute to the same hotness counters JITDispatcher::ShouldCompile reads.
-	if (!ProfilesAsArithmeticRoot(expr)) {
+	// Hotness tracks expressions we might JIT: scalar arithmetic ops and anything the LLVM
+	// compiler accepts (comparisons, conjunctions, etc.). Cheap check first.
+	if (!ProfilesAsArithmeticRoot(expr) && !JITCompiler::GetInstance().CanCompile(expr)) {
 		return;
 	}
 

@@ -1,0 +1,40 @@
+TPC-H JIT compilation breakdown (from tpch_jit_benchmark_latest.log)
+====================================================================
+
+Dispatcher summary (end of log):
+  Attempts: 39
+  Successes: 18   (each successful TryCompile that inserted into cache)
+  Failures: 21     (CanCompile=false or LLVM Compile returned null)
+
+Per-event log lines:
+  [JIT] Compiled expression fingerprint <id>     -> success (18 lines)
+  [JIT] Rejected fingerprint <id> (CanCompile=false) -> 21 lines
+  [JIT] Compile failed fingerprint <id> (LLVM...)  -> 0 lines in this run
+
+Unique fingerprints (deduplicated across the run):
+--------------------------------------------------------------------
+COMPILED (13 unique) — LLVM codegen accepted and cache inserted:
+  292470910035347139
+  9584739410915075861
+  7063580920924867949
+  14286054725627328903
+  12998950441139329383
+  6252675606025118113
+  10707060317817207121
+  14460894846068181426
+  9829541118329855875
+  13618196062415626476
+  10489546216203094846
+  12378258837970254100
+  16358358742620812734
+
+REJECTED — JITCompiler::CanCompile returned false (3 unique):
+  11164132297951120785  (8 attempts)
+  7151904203746778777   (8 attempts)
+  14593437338708403440  (5 attempts)
+
+LLVM compile failed (unique): none in this run.
+
+Note: tpch_jit_benchmark clears JITCache between each query, so the same
+expression fingerprint may be compiled again on a later query, which is why
+there are 18 "Compiled" lines but only 13 unique compiled fingerprints.
