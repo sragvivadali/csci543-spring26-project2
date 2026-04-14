@@ -270,6 +270,14 @@ The microbenchmark suite includes:
 - arithmetic filter
 - mixed filter + projection
 
+### Results Summary
+
+| Scenario | Vectorized | JIT | Speedup |
+|---|---:|---:|---:|
+| Projection | 0.184ms | 0.168ms | 1.09x |
+| Filter | 0.121ms | 0.114ms | 1.05x |
+| Mixed | 0.116ms | 0.123ms | 0.94x |
+
 Raw benchmark outputs are stored in `docs/benchmark/`.
 
 ## Documentation

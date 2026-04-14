@@ -61,3 +61,10 @@ JIT_LOG_COMPILE=1 ./build/tools/jit_micro_benchmark 50000 1 1000
 ## Stored Benchmark Artifacts
 
 All generated benchmark CSV/log files should be kept under `docs/benchmark/`.
+
+Current repository artifacts in that folder include:
+
+- TPC-H benchmark outputs
+- TPC-DS benchmark outputs
+- microbenchmark threshold sweeps
+- microbenchmark stress-test logs

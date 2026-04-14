@@ -19,7 +19,8 @@ This project extends a vendored DuckDB tree with a runtime expression JIT pipeli
 
 ## Current Capability Snapshot
 
-- JIT supports arithmetic/comparison/conjunction/cast trees over supported physical types.
+- JIT supports arithmetic, comparison, conjunction, and cast trees over the currently supported physical types.
+- The current implementation supports a broader numeric set than the original proposal target, including `BOOL`, signed/unsigned integer widths up to `INT128` / `UINT128`, plus `FLOAT` and `DOUBLE`.
 - Additional support was added for wider integer flows (`INT128` / `UINT128`), unary `+/-`, `//`, and depth-0 `BOUND_COLUMN_REF`.
 - JIT is runtime-configurable (`SetEnableJIT`, `SetCompilationThreshold`).
 

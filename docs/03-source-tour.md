@@ -16,6 +16,10 @@ This page maps the main implementation files and why they matter.
   - Comparison execution and filter select path.
   - JIT support for filter predicates.
 
+- `duckdb/src/execution/expression_executor/execute_between.cpp`
+  - Between-expression filter select path.
+  - Profiling hook for predicate hotness in `BETWEEN` filters.
+
 ## JIT Subsystem
 
 - `duckdb/src/execution/jit/jit_profiler.cpp` + header
@@ -36,6 +40,15 @@ This page maps the main implementation files and why they matter.
 - `duckdb/tools/tpch_jit_benchmark.cpp`
 - `duckdb/tools/tpcds_jit_benchmark.cpp`
 - `duckdb/tools/jit_micro_benchmark.cpp`
+
+## Supporting Project Docs
+
+- `README.md`
+  - Project-facing overview, architecture summary, and benchmark entry points.
+- `docs/04-runtime-details.md`
+  - Edge cases, mitigations, and runtime behavior notes.
+- `docs/06-challenges-and-open-issues.md`
+  - What was solved versus what still remains open.
 
 ## Tests
 
