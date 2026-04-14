@@ -1,0 +1,109 @@
+
+========================================================================
+  TPC-H JIT vs. Vectorization Benchmark  (CSCI 543)
+========================================================================
+  Scale factor      : SF0.1
+  Iterations        : 3 (+ 1 warm-up)
+  Output CSV        : /Users/sragvivadali/Device/csci543-spring26-project2/docs/benchmark/tpch_jit_results.csv
+  JIT threshold     : 1000 tuples
+
+DuckDB worker threads set to 2 (DUCKDB_BENCHMARK_THREADS)
+Generating TPC-H data at SF0.1 … (this may take a moment)
+Data generation complete.
+
+Query       Vec (ms)      JIT (ms)   Speedup
+--------------------------------------------
+[JIT] Compiled expression fingerprint 9584739410915075861
+[JIT] Compiled expression fingerprint 7063580920924867949
+Q01            10.29         13.53      0.76
+Q02             2.48          2.52      0.98
+[JIT] Compiled expression fingerprint 292470910035347139
+[JIT] Compiled expression fingerprint 14286054725627328903
+Q03             3.65          3.80      0.96
+[JIT] Compiled expression fingerprint 12998950441139329383
+Q04             4.08          4.76      0.86
+[JIT] Compiled expression fingerprint 6252675606025118113
+Q05             4.56          5.44      0.84
+[JIT] Compiled expression fingerprint 10707060317817207121
+Q06             1.34          2.12      0.63
+[JIT] Compiled expression fingerprint 6252675606025118113
+Q07             5.32          5.45      0.98
+[JIT] Compiled expression fingerprint 6252675606025118113
+Q08             4.21          5.01      0.84
+[JIT] Compiled expression fingerprint 14460894846068181426
+Q09             9.86          9.99      0.99
+[JIT] Compiled expression fingerprint 14286054725627328903
+Q10             9.92         10.17      0.98
+[JIT] Rejected fingerprint 11164132297951120785 (CanCompile=false)
+[JIT] Rejected fingerprint 11164132297951120785 (CanCompile=false)
+[JIT] Rejected fingerprint 7151904203746778777 (CanCompile=false)
+[JIT] Rejected fingerprint 7151904203746778777 (CanCompile=false)
+[JIT] Rejected fingerprint 11164132297951120785 (CanCompile=false)
+[JIT] Rejected fingerprint 11164132297951120785 (CanCompile=false)
+[JIT] Rejected fingerprint 7151904203746778777 (CanCompile=false)
+[JIT] Rejected fingerprint 7151904203746778777 (CanCompile=false)
+[JIT] Rejected fingerprint 11164132297951120785 (CanCompile=false)
+[JIT] Rejected fingerprint 11164132297951120785 (CanCompile=false)
+[JIT] Rejected fingerprint 7151904203746778777 (CanCompile=false)
+[JIT] Rejected fingerprint 7151904203746778777 (CanCompile=false)
+[JIT] Rejected fingerprint 7151904203746778777 (CanCompile=false)
+[JIT] Rejected fingerprint 7151904203746778777 (CanCompile=false)
+[JIT] Rejected fingerprint 11164132297951120785 (CanCompile=false)
+[JIT] Rejected fingerprint 11164132297951120785 (CanCompile=false)
+Q11             1.59          2.30      0.69
+[JIT] Compiled expression fingerprint 9829541118329855875
+[JIT] Compiled expression fingerprint 13618196062415626476
+Q12             7.47          8.02      0.93
+Q13            13.86         13.71      1.01
+[JIT] Compiled expression fingerprint 14286054725627328903
+Q14             2.13          2.50      0.85
+[JIT] Compiled expression fingerprint 6252675606025118113
+Q15             1.78          2.56      0.70
+Q16             3.56          3.57      1.00
+[JIT] Compiled expression fingerprint 10489546216203094846
+Q17             2.99          4.63      0.65
+Q18             8.16          8.13      1.00
+[JIT] Compiled expression fingerprint 12378258837970254100
+Q19             7.85          7.97      0.98
+[JIT] Rejected fingerprint 14593437338708403440 (CanCompile=false)
+[JIT] Rejected fingerprint 14593437338708403440 (CanCompile=false)
+[JIT] Rejected fingerprint 14593437338708403440 (CanCompile=false)
+[JIT] Rejected fingerprint 14593437338708403440 (CanCompile=false)
+[JIT] Rejected fingerprint 14593437338708403440 (CanCompile=false)
+Q20             3.49          3.76      0.93
+[JIT] Compiled expression fingerprint 16358358742620812734
+Q21            10.43         11.13      0.94
+Q22             2.46          2.25      1.09
+
+========================================================================
+  Summary
+========================================================================
+
+  Queries run           : 22
+  JIT faster (>5%)      : 1
+  JIT slower  (<-5%)    : 12
+  Roughly equal (±5%)   : 9
+
+  Total vectorized time : 121.5 ms
+  Total JIT time        : 133.3 ms
+  Overall speedup       : 0.91x
+
+Results written to: /Users/sragvivadali/Device/csci543-spring26-project2/docs/benchmark/tpch_jit_results.csv
+
+========================================================================
+  JIT Dispatcher Stats
+========================================================================
+=== JIT Dispatcher Statistics ===
+JIT enabled: YES
+Compilation threshold: 1000 tuples
+
+Execution counts:
+  JIT executions: 10695
+  Interpreter executions: 11657
+  JIT usage: 47.85%
+
+Compilation:
+  Attempts: 39
+  Successes: 18
+  Failures: 21
+  Success rate: 46.15%

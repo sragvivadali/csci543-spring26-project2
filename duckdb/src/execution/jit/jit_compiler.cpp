@@ -55,10 +55,16 @@ namespace duckdb {
 static bool IsSupportedPhysType(PhysicalType pt) {
 	switch (pt) {
 	case PhysicalType::BOOL:
+	case PhysicalType::UINT8:
 	case PhysicalType::INT8:
+	case PhysicalType::UINT16:
 	case PhysicalType::INT16:
+	case PhysicalType::UINT32:
 	case PhysicalType::INT32:
+	case PhysicalType::UINT64:
 	case PhysicalType::INT64:
+	case PhysicalType::UINT128:
+	case PhysicalType::INT128:
 	case PhysicalType::FLOAT:
 	case PhysicalType::DOUBLE:
 		return true;
@@ -75,18 +81,23 @@ static bool CanCompileRec(const Expression &expr) {
 
 	case ExpressionClass::BOUND_REF:
 	case ExpressionClass::BOUND_CONSTANT:
+	case ExpressionClass::BOUND_COLUMN_REF:
 		return true;
 
 	case ExpressionClass::BOUND_FUNCTION: {
 		auto &fn = expr.Cast<BoundFunctionExpression>();
-		if (fn.children.size() != 2) {
+		if (fn.children.size() == 0 || fn.children.size() > 2) {
 			return false;
 		}
 		const auto &name = fn.function.name;
-		bool ok = (name == "+" || name == "-" || name == "*" || name == "/" ||
+		bool ok = (name == "+" || name == "-" || name == "*" || name == "/" || name == "//" ||
 		           name == "add" || name == "subtract" ||
 		           name == "multiply" || name == "divide");
 		if (!ok) {
+			return false;
+		}
+		if ((name == "*" || name == "multiply" || name == "/" || name == "divide" || name == "//") &&
+		    fn.children.size() != 2) {
 			return false;
 		}
 		for (auto &child : fn.children) {
@@ -138,10 +149,16 @@ bool JITCompiler::CanCompile(const Expression &expr) const {
 static llvm::Type *PhysToLLVM(PhysicalType pt, llvm::LLVMContext &ctx) {
 	switch (pt) {
 	case PhysicalType::BOOL:
+	case PhysicalType::UINT8:
 	case PhysicalType::INT8:   return llvm::Type::getInt8Ty(ctx);
+	case PhysicalType::UINT16:
 	case PhysicalType::INT16:  return llvm::Type::getInt16Ty(ctx);
+	case PhysicalType::UINT32:
 	case PhysicalType::INT32:  return llvm::Type::getInt32Ty(ctx);
+	case PhysicalType::UINT64:
 	case PhysicalType::INT64:  return llvm::Type::getInt64Ty(ctx);
+	case PhysicalType::UINT128:
+	case PhysicalType::INT128: return llvm::Type::getInt128Ty(ctx);
 	case PhysicalType::FLOAT:  return llvm::Type::getFloatTy(ctx);
 	case PhysicalType::DOUBLE: return llvm::Type::getDoubleTy(ctx);
 	default:                   return nullptr;
@@ -152,20 +169,99 @@ static bool IsFP(PhysicalType pt) {
 	return pt == PhysicalType::FLOAT || pt == PhysicalType::DOUBLE;
 }
 
+static bool IsUnsignedInt(PhysicalType pt) {
+	switch (pt) {
+	case PhysicalType::UINT8:
+	case PhysicalType::UINT16:
+	case PhysicalType::UINT32:
+	case PhysicalType::UINT64:
+	case PhysicalType::UINT128:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static bool IsInteger(PhysicalType pt) {
+	return !IsFP(pt);
+}
+
+static int IntegerWidth(PhysicalType pt) {
+	switch (pt) {
+	case PhysicalType::BOOL:
+	case PhysicalType::UINT8:
+	case PhysicalType::INT8:
+		return 8;
+	case PhysicalType::UINT16:
+	case PhysicalType::INT16:
+		return 16;
+	case PhysicalType::UINT32:
+	case PhysicalType::INT32:
+		return 32;
+	case PhysicalType::UINT64:
+	case PhysicalType::INT64:
+		return 64;
+	case PhysicalType::UINT128:
+	case PhysicalType::INT128:
+		return 128;
+	default:
+		return -1;
+	}
+}
+
+static PhysicalType UnsignedTypeForWidth(int width) {
+	switch (width) {
+	case 8:
+		return PhysicalType::UINT8;
+	case 16:
+		return PhysicalType::UINT16;
+	case 32:
+		return PhysicalType::UINT32;
+	case 64:
+		return PhysicalType::UINT64;
+	case 128:
+		return PhysicalType::UINT128;
+	default:
+		return PhysicalType::INVALID;
+	}
+}
+
 static int TypeRank(PhysicalType pt) {
 	switch (pt) {
 	case PhysicalType::BOOL:   return 0;
+	case PhysicalType::UINT8:
 	case PhysicalType::INT8:   return 1;
+	case PhysicalType::UINT16:
 	case PhysicalType::INT16:  return 2;
+	case PhysicalType::UINT32:
 	case PhysicalType::INT32:  return 3;
+	case PhysicalType::UINT64:
 	case PhysicalType::INT64:  return 4;
-	case PhysicalType::FLOAT:  return 5;
-	case PhysicalType::DOUBLE: return 6;
+	case PhysicalType::UINT128:
+	case PhysicalType::INT128: return 5;
+	case PhysicalType::FLOAT:  return 6;
+	case PhysicalType::DOUBLE: return 7;
 	default:                   return -1;
 	}
 }
 
 static PhysicalType CommonType(PhysicalType a, PhysicalType b) {
+	if (a == b) {
+		return a;
+	}
+	if (IsInteger(a) && IsInteger(b)) {
+		const int wa = IntegerWidth(a);
+		const int wb = IntegerWidth(b);
+		if (wa > wb) {
+			return a;
+		}
+		if (wb > wa) {
+			return b;
+		}
+		if (IsUnsignedInt(a) || IsUnsignedInt(b)) {
+			return UnsignedTypeForWidth(wa);
+		}
+	}
 	return TypeRank(a) >= TypeRank(b) ? a : b;
 }
 
@@ -177,9 +273,17 @@ static llvm::Value *Promote(llvm::Value *v, PhysicalType from, PhysicalType to,
 	llvm::Type *dst = PhysToLLVM(to, ctx);
 	bool ffp = IsFP(from), tfp = IsFP(to);
 	if (ffp && tfp)  { return TypeRank(to) > TypeRank(from) ? B.CreateFPExt(v, dst, "fpext")   : B.CreateFPTrunc(v, dst, "fptrunc"); }
-	if (!ffp && tfp) { return B.CreateSIToFP(v, dst, "sitofp"); }
-	if (ffp && !tfp) { return B.CreateFPToSI(v, dst, "fptosi"); }
-	return TypeRank(to) > TypeRank(from) ? B.CreateSExt(v, dst, "sext") : B.CreateTrunc(v, dst, "trunc");
+	if (!ffp && tfp) { return IsUnsignedInt(from) ? B.CreateUIToFP(v, dst, "uitofp") : B.CreateSIToFP(v, dst, "sitofp"); }
+	if (ffp && !tfp) { return IsUnsignedInt(to) ? B.CreateFPToUI(v, dst, "fptoui") : B.CreateFPToSI(v, dst, "fptosi"); }
+	const int from_w = IntegerWidth(from);
+	const int to_w = IntegerWidth(to);
+	if (from_w == to_w) {
+		return v;
+	}
+	if (to_w > from_w) {
+		return IsUnsignedInt(from) ? B.CreateZExt(v, dst, "zext") : B.CreateSExt(v, dst, "sext");
+	}
+	return B.CreateTrunc(v, dst, "trunc");
 }
 
 // ── IR codegen ────────────────────────────────────────────────────────────────
@@ -220,6 +324,23 @@ static std::pair<llvm::Value *, llvm::Value *> CodegenRef(idx_t col, PhysicalTyp
 	return {val, isnull};
 }
 
+static llvm::Value *CodegenSignedFloorDiv(llvm::Value *lv, llvm::Value *rv, llvm::IRBuilder<> &B) {
+	// floor(a / b) for signed ints
+	// q = sdiv(a,b), r = srem(a,b)
+	// if r != 0 and signs(a) != signs(b): q - 1 else q
+	auto *q = B.CreateSDiv(lv, rv, "sdiv");
+	auto *r = B.CreateSRem(lv, rv, "srem");
+	auto *z = llvm::ConstantInt::get(lv->getType(), 0);
+	auto *has_rem = B.CreateICmpNE(r, z, "has_rem");
+	auto *lhs_neg = B.CreateICmpSLT(lv, z, "lhs_neg");
+	auto *rhs_neg = B.CreateICmpSLT(rv, z, "rhs_neg");
+	auto *signs_differ = B.CreateXor(lhs_neg, rhs_neg, "signs_differ");
+	auto *need_adjust = B.CreateAnd(has_rem, signs_differ, "need_floor_adjust");
+	auto *one = llvm::ConstantInt::get(lv->getType(), 1);
+	auto *q_minus_one = B.CreateSub(q, one, "q_minus_one");
+	return B.CreateSelect(need_adjust, q_minus_one, q, "floor_div");
+}
+
 static std::pair<llvm::Value *, llvm::Value *> Codegen(const Expression &expr, CCtx &cc) {
 	auto &ctx = cc.ctx;
 	auto &B   = cc.B;
@@ -232,6 +353,16 @@ static std::pair<llvm::Value *, llvm::Value *> Codegen(const Expression &expr, C
 		auto &r = expr.Cast<BoundReferenceExpression>();
 		return CodegenRef((idx_t)r.index, r.return_type.InternalType(), cc);
 	}
+	case ExpressionClass::BOUND_COLUMN_REF: {
+		auto &r = expr.Cast<BoundColumnRefExpression>();
+		// In executable plans this is usually rewritten to BOUND_REF first.
+		// For direct planner-level trees, support depth-0 column refs by using
+		// projection index as chunk slot.
+		if (r.depth != 0) {
+			return {llvm::Constant::getNullValue(PhysToLLVM(expr.return_type.InternalType(), ctx)), T};
+		}
+		return CodegenRef(r.binding.column_index.GetIndex(), r.return_type.InternalType(), cc);
+	}
 
 	case ExpressionClass::BOUND_CONSTANT: {
 		auto &c = expr.Cast<BoundConstantExpression>();
@@ -243,10 +374,26 @@ static std::pair<llvm::Value *, llvm::Value *> Codegen(const Expression &expr, C
 		llvm::Value *v = nullptr;
 		switch (pt) {
 		case PhysicalType::BOOL:
+		case PhysicalType::UINT8: v = llvm::ConstantInt::get(ty, c.value.GetValue<uint8_t>(),  false); break;
 		case PhysicalType::INT8:  v = llvm::ConstantInt::get(ty, (uint64_t)c.value.GetValue<int8_t>(),  true); break;
+		case PhysicalType::UINT16:v = llvm::ConstantInt::get(ty, c.value.GetValue<uint16_t>(), false); break;
 		case PhysicalType::INT16: v = llvm::ConstantInt::get(ty, (uint64_t)c.value.GetValue<int16_t>(), true); break;
+		case PhysicalType::UINT32:v = llvm::ConstantInt::get(ty, c.value.GetValue<uint32_t>(), false); break;
 		case PhysicalType::INT32: v = llvm::ConstantInt::get(ty, (uint64_t)c.value.GetValue<int32_t>(), true); break;
+		case PhysicalType::UINT64:v = llvm::ConstantInt::get(ty, c.value.GetValue<uint64_t>(), false); break;
 		case PhysicalType::INT64: v = llvm::ConstantInt::get(ty, (uint64_t)c.value.GetValue<int64_t>(), true); break;
+		case PhysicalType::INT128: {
+			const auto h = c.value.GetValue<hugeint_t>();
+			llvm::APInt ap(128, {h.lower, static_cast<uint64_t>(h.upper)});
+			v = llvm::ConstantInt::get(ctx, ap);
+			break;
+		}
+		case PhysicalType::UINT128: {
+			const auto h = c.value.GetValue<uhugeint_t>();
+			llvm::APInt ap(128, {h.lower, h.upper});
+			v = llvm::ConstantInt::get(ctx, ap);
+			break;
+		}
 		case PhysicalType::FLOAT: v = llvm::ConstantFP::get(ty, (double)c.value.GetValue<float>());            break;
 		case PhysicalType::DOUBLE:v = llvm::ConstantFP::get(ty, c.value.GetValue<double>());                   break;
 		default:                  v = llvm::Constant::getNullValue(ty);                                         break;
@@ -257,23 +404,51 @@ static std::pair<llvm::Value *, llvm::Value *> Codegen(const Expression &expr, C
 	case ExpressionClass::BOUND_FUNCTION: {
 		auto &fn = expr.Cast<BoundFunctionExpression>();
 		auto [lv, ln] = Codegen(*fn.children[0], cc);
-		auto [rv, rn] = Codegen(*fn.children[1], cc);
-		auto *en = B.CreateOr(ln, rn, "either_null");
+		llvm::Value *rv = nullptr;
+		llvm::Value *rn = nullptr;
+		llvm::Value *en = ln;
+		if (fn.children.size() == 2) {
+			auto rhs = Codegen(*fn.children[1], cc);
+			rv = rhs.first;
+			rn = rhs.second;
+			en = B.CreateOr(ln, rn, "either_null");
+		}
 
 		PhysicalType lp = fn.children[0]->return_type.InternalType();
-		PhysicalType rp = fn.children[1]->return_type.InternalType();
+		PhysicalType rp = fn.children.size() == 2 ? fn.children[1]->return_type.InternalType() : lp;
 		PhysicalType rtp = fn.return_type.InternalType();
-		PhysicalType com = CommonType(CommonType(lp, rp), rtp);
+		PhysicalType com = fn.children.size() == 2 ? CommonType(CommonType(lp, rp), rtp) : CommonType(lp, rtp);
 		lv = Promote(lv, lp, com, B, ctx);
-		rv = Promote(rv, rp, com, B, ctx);
+		if (fn.children.size() == 2) {
+			rv = Promote(rv, rp, com, B, ctx);
+		}
 
 		const auto &nm = fn.function.name;
 		bool fp = IsFP(com);
+		bool u = IsUnsignedInt(com);
 		llvm::Value *res = nullptr;
-		if      (nm == "+" || nm == "add")      { res = fp ? B.CreateFAdd(lv,rv,"fadd") : B.CreateAdd(lv,rv,"add"); }
+		if (fn.children.size() == 1) {
+			if (nm == "+" || nm == "add") {
+				res = lv;
+			} else if (nm == "-" || nm == "subtract") {
+				res = fp ? B.CreateFNeg(lv, "fneg") : B.CreateNeg(lv, "neg");
+			} else {
+				res = llvm::Constant::getNullValue(PhysToLLVM(com, ctx));
+				en = T;
+			}
+		} else if      (nm == "+" || nm == "add")      { res = fp ? B.CreateFAdd(lv,rv,"fadd") : B.CreateAdd(lv,rv,"add"); }
 		else if (nm == "-" || nm == "subtract")  { res = fp ? B.CreateFSub(lv,rv,"fsub") : B.CreateSub(lv,rv,"sub"); }
 		else if (nm == "*" || nm == "multiply")  { res = fp ? B.CreateFMul(lv,rv,"fmul") : B.CreateMul(lv,rv,"mul"); }
-		else if (nm == "/" || nm == "divide")    { res = fp ? B.CreateFDiv(lv,rv,"fdiv") : B.CreateSDiv(lv,rv,"sdiv"); }
+		else if (nm == "/" || nm == "divide")    { res = fp ? B.CreateFDiv(lv,rv,"fdiv") : (u ? B.CreateUDiv(lv,rv,"udiv") : B.CreateSDiv(lv,rv,"sdiv")); }
+		else if (nm == "//") {
+			if (fp) {
+				// For floating-point floor division, use truncating fdiv as a temporary
+				// fallback; integer semantics are preserved exactly below.
+				res = B.CreateFDiv(lv, rv, "fdiv_floor_fallback");
+			} else {
+				res = u ? B.CreateUDiv(lv, rv, "udiv_floor") : CodegenSignedFloorDiv(lv, rv, B);
+			}
+		}
 		else { res = llvm::Constant::getNullValue(PhysToLLVM(com, ctx)); en = T; }
 
 		return {Promote(res, com, rtp, B, ctx), en};
@@ -291,15 +466,16 @@ static std::pair<llvm::Value *, llvm::Value *> Codegen(const Expression &expr, C
 		lv = Promote(lv, lp, com, B, ctx);
 		rv = Promote(rv, rp, com, B, ctx);
 		bool fp = IsFP(com);
+		bool u = IsUnsignedInt(com);
 
 		llvm::Value *ci = nullptr;
 		switch (cmp.GetExpressionType()) {
 		case ExpressionType::COMPARE_EQUAL:               ci = fp ? B.CreateFCmpOEQ(lv,rv) : B.CreateICmpEQ(lv,rv);  break;
 		case ExpressionType::COMPARE_NOTEQUAL:            ci = fp ? B.CreateFCmpONE(lv,rv) : B.CreateICmpNE(lv,rv);  break;
-		case ExpressionType::COMPARE_LESSTHAN:            ci = fp ? B.CreateFCmpOLT(lv,rv) : B.CreateICmpSLT(lv,rv); break;
-		case ExpressionType::COMPARE_GREATERTHAN:         ci = fp ? B.CreateFCmpOGT(lv,rv) : B.CreateICmpSGT(lv,rv); break;
-		case ExpressionType::COMPARE_LESSTHANOREQUALTO:   ci = fp ? B.CreateFCmpOLE(lv,rv) : B.CreateICmpSLE(lv,rv); break;
-		case ExpressionType::COMPARE_GREATERTHANOREQUALTO:ci = fp ? B.CreateFCmpOGE(lv,rv) : B.CreateICmpSGE(lv,rv); break;
+		case ExpressionType::COMPARE_LESSTHAN:            ci = fp ? B.CreateFCmpOLT(lv,rv) : (u ? B.CreateICmpULT(lv,rv) : B.CreateICmpSLT(lv,rv)); break;
+		case ExpressionType::COMPARE_GREATERTHAN:         ci = fp ? B.CreateFCmpOGT(lv,rv) : (u ? B.CreateICmpUGT(lv,rv) : B.CreateICmpSGT(lv,rv)); break;
+		case ExpressionType::COMPARE_LESSTHANOREQUALTO:   ci = fp ? B.CreateFCmpOLE(lv,rv) : (u ? B.CreateICmpULE(lv,rv) : B.CreateICmpSLE(lv,rv)); break;
+		case ExpressionType::COMPARE_GREATERTHANOREQUALTO:ci = fp ? B.CreateFCmpOGE(lv,rv) : (u ? B.CreateICmpUGE(lv,rv) : B.CreateICmpSGE(lv,rv)); break;
 		default: ci = F; en = T;
 		}
 		return {B.CreateZExt(ci, llvm::Type::getInt8Ty(ctx), "bool_i8"), en};

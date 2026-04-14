@@ -1,0 +1,85 @@
+
+========================================================================
+  JIT micro-benchmark (arithmetic projection / filter / mixed)
+========================================================================
+  Table rows        : 50000
+  Repeat per query  : 1 (each scenario runs this many times)
+  JIT threshold     : 1000 tuples
+  Output CSV        : /Users/sragvivadali/Device/csci543-spring26-project2/docs/benchmark/jit_micro_results.csv
+
+DuckDB worker threads set to 2 (DUCKDB_BENCHMARK_THREADS)
+Creating table t(50000 rows) …
+Done.
+
+--- projection ---
+SELECT a * b + c, a / (b + 1.0), a * 0.9 - c * 0.1 FROM t
+[JIT] Compiled expression fingerprint 6488732743412810443
+[JIT] Compiled expression fingerprint 6784040692104915145
+[JIT] Compiled expression fingerprint 10208422842714533886
+  Vector avg: 2.174 ms
+  JIT avg:    1.375 ms
+  Speedup:    1.58x
+
+  JITDispatcher stats (projection):
+=== JIT Dispatcher Statistics ===
+JIT enabled: YES
+Compilation threshold: 1000 tuples
+
+Execution counts:
+  JIT executions: 150
+  Interpreter executions: 0
+  JIT usage: 100.00%
+
+Compilation:
+  Attempts: 3
+  Successes: 3
+  Failures: 0
+  Success rate: 100.00%
+
+--- filter ---
+SELECT * FROM t WHERE a * 1.1 > 50 AND b * c < 1000000
+[JIT] Compiled expression fingerprint 9351194532041410969
+  Vector avg: 0.824 ms
+  JIT avg:    0.522 ms
+  Speedup:    1.58x
+
+  JITDispatcher stats (filter):
+=== JIT Dispatcher Statistics ===
+JIT enabled: YES
+Compilation threshold: 1000 tuples
+
+Execution counts:
+  JIT executions: 50
+  Interpreter executions: 0
+  JIT usage: 100.00%
+
+Compilation:
+  Attempts: 1
+  Successes: 1
+  Failures: 0
+  Success rate: 100.00%
+
+--- mixed ---
+SELECT a * b + c FROM t WHERE a * 1.1 > 50
+[JIT] Compiled expression fingerprint 6488732743412810443
+  Vector avg: 0.793 ms
+  JIT avg:    1.108 ms
+  Speedup:    0.72x
+
+  JITDispatcher stats (mixed):
+=== JIT Dispatcher Statistics ===
+JIT enabled: YES
+Compilation threshold: 1000 tuples
+
+Execution counts:
+  JIT executions: 50
+  Interpreter executions: 0
+  JIT usage: 100.00%
+
+Compilation:
+  Attempts: 1
+  Successes: 1
+  Failures: 0
+  Success rate: 100.00%
+
+Results written to: /Users/sragvivadali/Device/csci543-spring26-project2/docs/benchmark/jit_micro_results.csv

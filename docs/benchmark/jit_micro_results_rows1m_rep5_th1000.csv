@@ -1,0 +1,4 @@
+scenario,rows,repeat,threshold,vectorized_avg_ms,jit_avg_ms,speedup
+projection,1000000,5,1000,22.345,17.1552,1.30252
+filter,1000000,5,1000,8.144,4.5788,1.77863
+mixed,1000000,5,1000,7.6334,10.517,0.725815

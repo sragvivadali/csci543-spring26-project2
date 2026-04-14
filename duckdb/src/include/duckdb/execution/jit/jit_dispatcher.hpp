@@ -21,7 +21,7 @@
 //
 // Configuration
 // -------------
-// - compilation_threshold: min tuple count before compiling (default 10000)
+// - compilation_threshold: min tuple count before compiling (default 1000; synced to JITProfiler hotness)
 // - enable_jit: master switch to enable/disable JIT (default false)
 //
 //===----------------------------------------------------------------------===//
@@ -46,6 +46,14 @@ public:
 	bool TryExecuteJIT(const Expression &expr, ExpressionExecutor &executor, 
 	                   Vector **inputs, Vector &result, idx_t count);
 
+	//! Fill `col_ptrs[i]` only for chunk columns referenced by `expr` (BoundRef::index).
+	//! Other slots stay null. The LLVM kernel indexes by column id; it does not need every
+	//! chunk column, so omitting unrelated columns avoids flattening vectors that cannot be
+	//! materialized for JIT (e.g. INVALID physical type on unused columns).
+	//! `col_ptrs` must be zero-initialized; `max_cols` is typically 64.
+	static void PopulateSparseColumnPointers(const Expression &expr, DataChunk &chunk, Vector **col_ptrs,
+	                                         idx_t max_cols);
+
 	//! Configuration
 	void SetCompilationThreshold(idx_t threshold);
 	void SetEnableJIT(bool enable);
@@ -68,12 +76,7 @@ public:
 	void PrintStats() const;
 
 private:
-	JITDispatcher() 
-	    : compilation_threshold(10000), enable_jit(false),
-	      jit_executions(0), interpreter_executions(0),
-	      compilation_attempts(0), compilation_successes(0), 
-	      compilation_failures(0) {
-	}
+	JITDispatcher();
 
 	idx_t compilation_threshold;
 	bool enable_jit;
